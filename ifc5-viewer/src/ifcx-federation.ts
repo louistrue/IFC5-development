@@ -124,12 +124,32 @@ export class IFCXFederation {
             const federatedData = this.federateFiles(visibleFiles);
             console.log(`Federated data has ${federatedData.data.length} entries`);
 
+            // Debug: Check federated data attributes
+            console.log('=== FEDERATED DATA DEBUG ===');
+            federatedData.data.slice(0, 5).forEach((entry, index) => {
+                console.log(`Federated entry ${index}: ${entry.path}`);
+                console.log(`  Attributes: [${Object.keys(entry.attributes || {}).join(', ')}]`);
+            });
+
             // Composition: Resolve inheritance and references
             const inputNodes = this.toInputNodes(federatedData.data);
             console.log(`Created ${inputNodes.size} input node groups`);
 
             const compositionNodes = this.convertNodes(inputNodes);
             console.log(`Converted to ${compositionNodes.size} composition nodes`);
+
+            // Debug: Check composition nodes attributes
+            console.log('=== COMPOSITION NODES DEBUG ===');
+            let nodeIndex = 0;
+            for (const [path, node] of compositionNodes) {
+                if (nodeIndex < 5) {
+                    console.log(`Composition node ${nodeIndex}: ${path}`);
+                    console.log(`  Attributes: [${Object.keys(node.attributes).join(', ')}]`);
+                    console.log(`  Children: [${Object.keys(node.children).join(', ')}]`);
+                    console.log(`  Inherits: [${Object.keys(node.inherits).join(', ')}]`);
+                }
+                nodeIndex++;
+            }
 
             // Validate schemas (non-blocking)
             this.validateSchemas(federatedData.schemas, compositionNodes);
@@ -138,12 +158,43 @@ export class IFCXFederation {
             this.composedRoot = this.createComposedTree(compositionNodes, federatedData.schemas);
             console.log(`Created composed tree:`, this.composedRoot ? `root with ${this.composedRoot.children.length} children` : 'null');
 
+            // Debug: Check final composed tree attributes
+            if (this.composedRoot) {
+                console.log('=== FINAL COMPOSED TREE ATTRIBUTES DEBUG ===');
+                this.debugComposedNodeAttributes(this.composedRoot, 0, 3); // Max depth 3
+            }
+
             this.callbacks.onCompositionChanged?.(this.composedRoot);
         } catch (error) {
             console.error('Composition failed:', error);
             this.composedRoot = null;
             this.callbacks.onCompositionChanged?.(null);
         }
+    }
+
+    private debugComposedNodeAttributes(node: ComposedNode, depth: number, maxDepth: number): void {
+        if (depth > maxDepth) return;
+
+        const indent = '  '.repeat(depth);
+        console.log(`${indent}Node: ${node.path} (${node.name})`);
+        console.log(`${indent}  Attributes: [${Object.keys(node.attributes).join(', ')}]`);
+
+        // Show first few attribute values
+        const attrEntries = Object.entries(node.attributes).slice(0, 3);
+        attrEntries.forEach(([key, value]) => {
+            if (typeof value === 'object') {
+                console.log(`${indent}    ${key}: ${JSON.stringify(value).substring(0, 80)}...`);
+            } else {
+                console.log(`${indent}    ${key}: ${value}`);
+            }
+        });
+
+        console.log(`${indent}  Children: ${node.children.length}`);
+
+        // Recurse into first few children
+        node.children.slice(0, 2).forEach(child => {
+            this.debugComposedNodeAttributes(child, depth + 1, maxDepth);
+        });
     }
 
     private federateFiles(files: IFCXFile[]): IFCXData {
@@ -176,18 +227,6 @@ export class IFCXFederation {
         const inputNodes = new Map<string, InputNode[]>();
 
         data.forEach(ifcxNode => {
-            console.log(`Processing IFCX entry: ${ifcxNode.path}`);
-            console.log(`  Attributes:`, Object.keys(ifcxNode.attributes || {}));
-
-            // Check specifically for USD mesh attributes
-            const hasUSDMesh = Object.keys(ifcxNode.attributes || {}).some(key =>
-                key.includes('usd::usdgeom::mesh')
-            );
-            if (hasUSDMesh) {
-                console.log(`  ** Found USD mesh attributes! **`);
-                console.log(`  USD mesh details:`, ifcxNode.attributes);
-            }
-
             const node: InputNode = {
                 path: ifcxNode.path,
                 children: ifcxNode.children || {},
@@ -211,8 +250,6 @@ export class IFCXFederation {
     }
 
     private collapseNodes(path: string, nodes: InputNode[]): InputNode {
-        console.log(`Collapsing ${nodes.length} nodes for path: ${path}`);
-
         const result: InputNode = {
             path,
             children: {},
@@ -220,17 +257,7 @@ export class IFCXFederation {
             attributes: {}
         };
 
-        nodes.forEach((node, index) => {
-            console.log(`  Node ${index} attributes:`, Object.keys(node.attributes));
-
-            // Check for USD mesh attributes before merging
-            const hasUSDMesh = Object.keys(node.attributes).some(key =>
-                key.includes('usd::usdgeom::mesh')
-            );
-            if (hasUSDMesh) {
-                console.log(`    ** Node ${index} has USD mesh attributes! **`);
-            }
-
+        nodes.forEach((node) => {
             // Merge children (later nodes override)
             Object.assign(result.children, node.children);
 
@@ -240,16 +267,6 @@ export class IFCXFederation {
             // Merge attributes (later nodes override)
             Object.assign(result.attributes, node.attributes);
         });
-
-        console.log(`  Final collapsed attributes:`, Object.keys(result.attributes));
-
-        // Check if USD attributes survived the collapse
-        const finalHasUSDMesh = Object.keys(result.attributes).some(key =>
-            key.includes('usd::usdgeom::mesh')
-        );
-        if (finalHasUSDMesh) {
-            console.log(`  ** Final node has USD mesh attributes! **`);
-        }
 
         return result;
     }
@@ -364,48 +381,16 @@ export class IFCXFederation {
         // Debug: Log the final tree structure
         if (result) {
             console.log('=== FINAL COMPOSED TREE DEBUG ===');
-            this.debugLogNode(result, 0);
+            console.log('Created composed tree with root and children');
             console.log('=== END FINAL TREE DEBUG ===');
         }
 
         return result;
     }
 
-    private debugLogNode(node: ComposedNode, depth: number): void {
-        const indent = '  '.repeat(depth);
-        console.log(`${indent}Node: ${node.path} (${node.name})`);
-        console.log(`${indent}  Attributes: [${Object.keys(node.attributes).join(', ')}]`);
-
-        // Check specifically for USD mesh attributes
-        const hasUSDMesh = Object.keys(node.attributes).some(key =>
-            key.includes('usd::usdgeom::mesh')
-        );
-        if (hasUSDMesh) {
-            console.log(`${indent}  *** HAS USD MESH DATA ***`);
-            const meshAttr = node.attributes['usd::usdgeom::mesh'];
-            if (meshAttr) {
-                console.log(`${indent}  Mesh data keys:`, Object.keys(meshAttr));
-                if (meshAttr.points) {
-                    console.log(`${indent}  Points: ${Array.isArray(meshAttr.points) ? meshAttr.points.length : 'not array'} values`);
-                }
-                if (meshAttr.faceVertexIndices) {
-                    console.log(`${indent}  Indices: ${Array.isArray(meshAttr.faceVertexIndices) ? meshAttr.faceVertexIndices.length : 'not array'} values`);
-                }
-            }
-        }
-
-        console.log(`${indent}  Children: ${node.children.length}`);
-        node.children.forEach(child => {
-            this.debugLogNode(child, depth + 1);
-        });
-    }
-
     private findRootPaths(nodes: Map<string, InputNode>): string[] {
         const allPaths = new Set(nodes.keys());
         const childPaths = new Set<string>();
-
-        console.log('=== ROOT PATH DETECTION DEBUG ===');
-        console.log(`Total nodes: ${allPaths.size}`);
 
         // Collect all paths that are referenced as children
         nodes.forEach(node => {
@@ -413,36 +398,20 @@ export class IFCXFederation {
                 if (childPath) {
                     const head = this.getHead(childPath);
                     childPaths.add(head);
-                    console.log(`  Found child reference: ${childPath} (head: ${head})`);
                 }
             });
             Object.values(node.inherits).forEach(inheritPath => {
                 if (inheritPath) {
                     const head = this.getHead(inheritPath);
                     childPaths.add(head);
-                    console.log(`  Found inherit reference: ${inheritPath} (head: ${head})`);
                 }
             });
         });
-
-        console.log(`Child/inherit references found: ${childPaths.size}`);
-        console.log(`Child/inherit paths:`, Array.from(childPaths));
 
         // Root paths are those not referenced as children and don't contain "/"
         const candidateRoots = Array.from(allPaths).filter(path =>
             !childPaths.has(path) && !path.includes('/')
         );
-
-        console.log(`Candidate roots (not referenced, no slash): ${candidateRoots.length}`);
-        candidateRoots.forEach(path => {
-            const node = nodes.get(path);
-            const childCount = Object.keys(node?.children || {}).length;
-            const inheritCount = Object.keys(node?.inherits || {}).length;
-            const attrCount = Object.keys(node?.attributes || {}).length;
-            console.log(`  Candidate: ${path} - children: ${childCount}, inherits: ${inheritCount}, attrs: ${attrCount}`);
-        });
-
-        console.log('=== END ROOT PATH DETECTION DEBUG ===');
 
         return candidateRoots;
     }
@@ -464,24 +433,19 @@ export class IFCXFederation {
             return null;
         }
 
-        console.log(`Expanding node: ${path}`);
-        console.log(`  Original attributes:`, Object.keys(node.attributes));
-        console.log(`  Attribute details:`, node.attributes);
+        const newVisited = [...visited, path];
 
         const composedNode: ComposedNode = {
-            name: path.split('/').pop() || path,
-            path,
+            name: node.path.split('/').pop() || node.path,
+            path: node.path,
             attributes: { ...node.attributes },
             children: [],
             sourceFiles: []
         };
 
-        const newVisited = [...visited, path];
-
-        // Add inherited attributes
+        // Resolve inheritance
         Object.values(node.inherits).forEach(inheritPath => {
             if (inheritPath) {
-                console.log(`  Inheriting from: ${inheritPath}`);
                 const inheritedNode = this.expandNode(
                     this.getHead(inheritPath),
                     nodes,
@@ -489,14 +453,9 @@ export class IFCXFederation {
                     newVisited
                 );
                 if (inheritedNode) {
-                    // Get subnode if path has tail
-                    const tail = this.getTail(inheritPath);
-                    const targetNode = tail ? this.getNodeByPath(inheritedNode, tail) : inheritedNode;
-                    if (targetNode) {
-                        console.log(`    Merging attributes from inherited node:`, Object.keys(targetNode.attributes));
-                        // Merge attributes (current node wins)
-                        Object.assign(composedNode.attributes, targetNode.attributes, composedNode.attributes);
-                    }
+                    // Merge attributes from inherited node (current node takes precedence)
+                    const merged = { ...inheritedNode.attributes, ...composedNode.attributes };
+                    composedNode.attributes = merged;
                 }
             }
         });
@@ -504,7 +463,6 @@ export class IFCXFederation {
         // Add children
         Object.entries(node.children).forEach(([childName, childPath]) => {
             if (childPath) {
-                console.log(`  Adding child: ${childName} -> ${childPath}`);
                 const childNode = this.expandNode(
                     this.getHead(childPath),
                     nodes,
@@ -517,20 +475,11 @@ export class IFCXFederation {
                     const targetNode = tail ? this.getNodeByPath(childNode, tail) : childNode;
                     if (targetNode) {
                         targetNode.name = childName;
-                        console.log(`    Successfully adding child ${childName} with attributes: [${Object.keys(targetNode.attributes).join(', ')}]`);
                         composedNode.children.push(targetNode);
-                        console.log(`    Parent ${composedNode.path} now has ${composedNode.children.length} children`);
-                    } else {
-                        console.log(`    Failed to get target node for child ${childName} with tail: ${tail}`);
                     }
-                } else {
-                    console.log(`    Failed to expand child node for ${childName} -> ${childPath}`);
                 }
             }
         });
-
-        console.log(`  Final composed attributes:`, Object.keys(composedNode.attributes));
-        console.log(`  Final composed children:`, composedNode.children.length);
 
         return composedNode;
     }

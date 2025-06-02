@@ -7,12 +7,18 @@ export class SelectionManager {
     private allMeshes: THREE.Mesh[] = [];
     private originalMaterials: Map<THREE.Mesh, THREE.Material | THREE.Material[]>;
     private composedRoot: ComposedNode | null = null;
+    private coordinateConversionEnabled: boolean = true;
 
     private raycaster: THREE.Raycaster;
     private mouse: THREE.Vector2;
+    private onCoordinateConversionToggle?: () => void;
 
-    constructor(originalMaterials: Map<THREE.Mesh, THREE.Material | THREE.Material[]>) {
+    constructor(
+        originalMaterials: Map<THREE.Mesh, THREE.Material | THREE.Material[]>,
+        onCoordinateConversionToggle?: () => void
+    ) {
         this.originalMaterials = originalMaterials;
+        this.onCoordinateConversionToggle = onCoordinateConversionToggle;
         this.raycaster = new THREE.Raycaster();
         this.mouse = new THREE.Vector2();
 
@@ -176,6 +182,12 @@ export class SelectionManager {
                 break;
             case 'a':
                 this.showAllObjects();
+                break;
+            case 'w':
+                this.toggleWireframe();
+                break;
+            case 'c':
+                this.toggleCoordinateConversion();
                 break;
             case 'escape':
                 this.clearSelection();
@@ -344,66 +356,34 @@ export class SelectionManager {
         // Get the composed node for this mesh
         const composedNode = (mesh as any).__composedNode as ComposedNode | undefined;
 
-        let html = '';
+        // Create table rows like the reference viewer
+        let rows: [string, any][] = [];
 
-        // Basic Information
-        html += '<div class="property-group">';
-        html += '<div class="property-group-title">Basic Information</div>';
-        html += `<div class="property-item">
-            <span class="property-key">Mesh Name:</span>
-            <span class="property-value">${mesh.name}</span>
-        </div>`;
+        // Add basic information
+        rows.push(['Mesh Name', mesh.name]);
 
         if (composedNode) {
-            html += `<div class="property-item">
-                <span class="property-key">Node Path:</span>
-                <span class="property-value">${composedNode.path}</span>
-            </div>`;
-            html += `<div class="property-item">
-                <span class="property-key">Node Name:</span>
-                <span class="property-value">${composedNode.name}</span>
-            </div>`;
-        }
-        html += '</div>';
+            rows.push(['Node Path', composedNode.path]);
+            rows.push(['Node Name', composedNode.name]);
 
-        // Geometry Information
-        html += '<div class="property-group geometry-info">';
-        html += '<div class="property-group-title">Geometry</div>';
+            // Add geometry information
+            const geometry = mesh.geometry;
+            const position = geometry.attributes.position;
+            const index = geometry.index;
 
-        const geometry = mesh.geometry;
-        const position = geometry.attributes.position;
-        const index = geometry.index;
+            if (position) {
+                rows.push(['Vertices', position.count]);
+            }
+            if (index) {
+                rows.push(['Faces', Math.floor(index.count / 3)]);
+            }
 
-        if (position) {
-            html += `<div class="property-item">
-                <span class="property-key">Vertices:</span>
-                <span class="property-value">${position.count}</span>
-            </div>`;
-        }
+            // Add bounding box size
+            const box = new THREE.Box3().setFromObject(mesh);
+            const size = box.getSize(new THREE.Vector3());
+            rows.push(['Size', `${size.x.toFixed(2)} × ${size.y.toFixed(2)} × ${size.z.toFixed(2)}`]);
 
-        if (index) {
-            html += `<div class="property-item">
-                <span class="property-key">Faces:</span>
-                <span class="property-value">${index.count / 3}</span>
-            </div>`;
-        }
-
-        // Bounding box
-        const box = new THREE.Box3().setFromObject(mesh);
-        const size = box.getSize(new THREE.Vector3());
-        html += `<div class="property-item">
-            <span class="property-key">Size:</span>
-            <span class="property-value">${size.x.toFixed(2)} × ${size.y.toFixed(2)} × ${size.z.toFixed(2)}</span>
-        </div>`;
-
-        html += '</div>';
-
-        // Composed Node Attributes - Use flattened attributes from federation
-        if (composedNode && Object.keys(composedNode.attributes).length > 0) {
-            html += '<div class="property-group">';
-            html += '<div class="property-group-title">Node Attributes</div>';
-
-            // Try to get flattened attributes from the federation
+            // Add all node attributes (flattened)
             const federation = (window as any).__federation;
             let displayAttributes = composedNode.attributes;
 
@@ -415,57 +395,36 @@ export class SelectionManager {
                 }
             }
 
+            // Add each attribute as a row
             Object.entries(displayAttributes).forEach(([key, value]) => {
-                const displayValue = this.formatPropertyValue(value);
-                // Clean up attribute names for display
-                const displayKey = key.split('::').pop() || key;
-                html += `<div class="property-item">
-                    <span class="property-key">${displayKey}:</span>
-                    <span class="property-value">${displayValue}</span>
-                </div>`;
+                rows.push([key, value]);
             });
-
-            html += '</div>';
         }
 
-        // Children Information
-        if (composedNode && composedNode.children.length > 0) {
-            html += '<div class="property-group">';
-            html += '<div class="property-group-title">Children</div>';
-            html += `<div class="property-item">
-                <span class="property-key">Child Count:</span>
-                <span class="property-value">${composedNode.children.length}</span>
-            </div>`;
+        // Generate HTML table like the reference viewer
+        const tableRows = rows.map(([k, v]) => {
+            const encodedKey = this.encodeHtmlEntities(k);
+            const encodedValue = this.encodeHtmlEntities(
+                typeof v === "object" ? JSON.stringify(v) : String(v)
+            );
+            return `<tr><td>${encodedKey}</td><td>${encodedValue}</td></tr>`;
+        }).join('');
 
-            composedNode.children.slice(0, 5).forEach((child, index) => {
-                html += `<div class="property-item">
-                    <span class="property-key">Child ${index + 1}:</span>
-                    <span class="property-value">${child.name}</span>
-                </div>`;
-            });
+        content.innerHTML = `<table border="0">${tableRows}</table>`;
+    }
 
-            if (composedNode.children.length > 5) {
-                html += `<div class="property-item">
-                    <span class="property-key">...</span>
-                    <span class="property-value">and ${composedNode.children.length - 5} more</span>
-                </div>`;
-            }
-
-            html += '</div>';
-        }
-
-        content.innerHTML = html;
+    private encodeHtmlEntities(str: string): string {
+        const div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
     }
 
     private showMultipleObjectsProperties(meshes: THREE.Mesh[], content: HTMLElement) {
-        let html = '';
+        // Create table rows for multiple selection
+        let rows: [string, any][] = [];
 
-        html += '<div class="property-group">';
-        html += '<div class="property-group-title">Multiple Selection</div>';
-        html += `<div class="property-item">
-            <span class="property-key">Count:</span>
-            <span class="property-value">${meshes.length} objects</span>
-        </div>`;
+        rows.push(['Selection Type', 'Multiple Objects']);
+        rows.push(['Count', `${meshes.length} objects`]);
 
         // Calculate total geometry info
         let totalVertices = 0;
@@ -478,55 +437,22 @@ export class SelectionManager {
             if (index) totalFaces += index.count / 3;
         });
 
-        html += `<div class="property-item">
-            <span class="property-key">Total Vertices:</span>
-            <span class="property-value">${totalVertices}</span>
-        </div>`;
-        html += `<div class="property-item">
-            <span class="property-key">Total Faces:</span>
-            <span class="property-value">${Math.floor(totalFaces)}</span>
-        </div>`;
-
-        html += '</div>';
+        rows.push(['Total Vertices', totalVertices]);
+        rows.push(['Total Faces', Math.floor(totalFaces)]);
 
         // List selected objects
-        html += '<div class="property-group">';
-        html += '<div class="property-group-title">Selected Objects</div>';
-
         meshes.forEach((mesh, index) => {
-            html += `<div class="property-item">
-                <span class="property-key">${index + 1}:</span>
-                <span class="property-value">${mesh.name}</span>
-            </div>`;
+            rows.push([`Object ${index + 1}`, mesh.name]);
         });
 
-        html += '</div>';
+        // Generate HTML table
+        const tableRows = rows.map(([k, v]) => {
+            const encodedKey = this.encodeHtmlEntities(k);
+            const encodedValue = this.encodeHtmlEntities(String(v));
+            return `<tr><td>${encodedKey}</td><td>${encodedValue}</td></tr>`;
+        }).join('');
 
-        content.innerHTML = html;
-    }
-
-    private formatPropertyValue(value: any): string {
-        if (value === null || value === undefined) {
-            return 'null';
-        }
-
-        if (typeof value === 'object') {
-            if (Array.isArray(value)) {
-                if (value.length > 10) {
-                    return `<div class="property-value array">[${value.length} items]<br>${JSON.stringify(value.slice(0, 5), null, 2)}...</div>`;
-                } else {
-                    return `<div class="property-value array">${JSON.stringify(value, null, 2)}</div>`;
-                }
-            } else {
-                return `<div class="property-value array">${JSON.stringify(value, null, 2)}</div>`;
-            }
-        }
-
-        if (typeof value === 'string' && value.length > 50) {
-            return value.substring(0, 50) + '...';
-        }
-
-        return String(value);
+        content.innerHTML = `<table border="0">${tableRows}</table>`;
     }
 
     private hidePropertiesPanel() {
@@ -563,5 +489,40 @@ export class SelectionManager {
         }
 
         return 0;
+    }
+
+    private toggleWireframe() {
+        this.allMeshes.forEach(mesh => {
+            const material = mesh.material;
+            if (Array.isArray(material)) {
+                material.forEach(mat => {
+                    if (mat instanceof THREE.MeshLambertMaterial ||
+                        mat instanceof THREE.MeshBasicMaterial ||
+                        mat instanceof THREE.MeshPhongMaterial ||
+                        mat instanceof THREE.MeshStandardMaterial) {
+                        mat.wireframe = !mat.wireframe;
+                        mat.needsUpdate = true;
+                    }
+                });
+            } else if (material instanceof THREE.MeshLambertMaterial ||
+                material instanceof THREE.MeshBasicMaterial ||
+                material instanceof THREE.MeshPhongMaterial ||
+                material instanceof THREE.MeshStandardMaterial) {
+                material.wireframe = !material.wireframe;
+                material.needsUpdate = true;
+            }
+        });
+
+        console.log('Toggled wireframe mode for all meshes');
+    }
+
+    private toggleCoordinateConversion() {
+        this.coordinateConversionEnabled = !this.coordinateConversionEnabled;
+        console.log('🔄 Coordinate conversion toggled:', this.coordinateConversionEnabled ? 'Z-up to Y-up' : 'Original orientation');
+        this.onCoordinateConversionToggle?.();
+    }
+
+    getCoordinateConversionEnabled(): boolean {
+        return this.coordinateConversionEnabled;
     }
 } 

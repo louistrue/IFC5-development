@@ -1,18 +1,11 @@
 import * as THREE from 'three';
 import type { ComposedNode } from './ifcx-federation';
 
-interface USDMaterial {
-    color: THREE.Color;
-    transparent: boolean;
-    opacity: number;
-    roughness?: number;
-    metallic?: number;
-}
-
 interface RenderOptions {
     enableTransforms: boolean;
     enableMaterials: boolean;
     enableVisibility: boolean;
+    enableCoordinateConversion: boolean;
 }
 
 export class USDRenderer {
@@ -24,7 +17,8 @@ export class USDRenderer {
     private defaultOptions: RenderOptions = {
         enableTransforms: true,
         enableMaterials: true,
-        enableVisibility: true
+        enableVisibility: true,
+        enableCoordinateConversion: true
     };
 
     constructor(scene: THREE.Scene) {
@@ -42,10 +36,67 @@ export class USDRenderer {
         const rootGroup = new THREE.Group();
         rootGroup.name = 'IFCXRoot';
 
-        this.traverseAndRender(root, rootGroup, root, finalOptions);
+        this.traverseAndRender(root, rootGroup, root, finalOptions, 'Root', undefined);
+
+        // Apply coordinate system conversion: IFC/USD typically uses Z-up, Three.js uses Y-up
+        // Rotate the entire scene 90 degrees around X axis to convert Z-up to Y-up
+        if (finalOptions.enableCoordinateConversion) {
+            rootGroup.rotation.x = -Math.PI / 2;
+            console.log('🔄 Applied Z-up to Y-up coordinate conversion (rotated -90° around X)');
+        }
 
         this.scene.add(rootGroup);
+
+        // Summary of what was created
+        const meshCount = this.meshes.length;
+        const meshNames = this.meshes.map(m => m.name).join(', ');
+        console.log(`🎯 Rendering complete: ${meshCount} meshes created`);
+        if (meshCount > 0) {
+            console.log(`   Meshes: ${meshNames}`);
+        }
+
         return this.meshes;
+    }
+
+    renderSingleNode(node: ComposedNode, options: Partial<RenderOptions> = {}): THREE.Mesh[] {
+        // Render a single node without clearing the scene (for adding walls)
+        const finalOptions = { ...this.defaultOptions, ...options };
+        const rootGroup = this.scene.getObjectByName('IFCXRoot') as THREE.Group;
+
+        // If no existing root group, create one
+        let targetGroup = rootGroup;
+        if (!targetGroup) {
+            targetGroup = new THREE.Group();
+            targetGroup.name = 'IFCXRoot';
+
+            // Apply coordinate system conversion if enabled
+            if (finalOptions.enableCoordinateConversion) {
+                targetGroup.rotation.x = -Math.PI / 2;
+            }
+
+            this.scene.add(targetGroup);
+        }
+
+        const newMeshes: THREE.Mesh[] = [];
+        const originalMeshCount = this.meshes.length;
+
+        // Temporarily store the original meshes array and create a new one for this node
+        const originalMeshes = this.meshes;
+        this.meshes = [];
+
+        this.traverseAndRender(node, targetGroup, node, finalOptions, 'New', undefined);
+
+        // Add the new meshes to the main meshes array and track them separately
+        newMeshes.push(...this.meshes);
+        this.meshes = [...originalMeshes, ...newMeshes];
+
+        console.log(`🎯 Added single node: ${newMeshes.length} new meshes created (total: ${this.meshes.length})`);
+        if (newMeshes.length > 0) {
+            const meshNames = newMeshes.map(m => m.name).join(', ');
+            console.log(`   New meshes: ${meshNames}`);
+        }
+
+        return newMeshes;
     }
 
     private clearScene(): void {
@@ -68,13 +119,12 @@ export class USDRenderer {
         node: ComposedNode,
         parent: THREE.Object3D,
         root: ComposedNode,
-        options: RenderOptions
+        options: RenderOptions,
+        parentName?: string,
+        parentNode?: ComposedNode
     ): void {
-        console.log(`Traversing node: ${node.path} (${node.name})`);
-
         // Check USD visibility
         if (options.enableVisibility && this.isInvisible(node)) {
-            console.log(`Skipping invisible node: ${node.path}`);
             return;
         }
 
@@ -83,8 +133,7 @@ export class USDRenderer {
 
         // Create mesh if this node has USD geometry
         if (this.hasMeshGeometry(node)) {
-            console.log(`Node ${node.path} has mesh geometry, creating mesh...`);
-            const mesh = this.createMeshFromNode(node, root, options);
+            const mesh = this.createMeshFromNode(node, root, options, parentName, parentNode);
             if (mesh) {
                 element = mesh;
                 this.meshes.push(mesh);
@@ -94,21 +143,14 @@ export class USDRenderer {
                     this.nodeToMeshMap.set(node.path, []);
                 }
                 this.nodeToMeshMap.get(node.path)!.push(mesh);
-                console.log(`Successfully created mesh for ${node.path}`);
-            } else {
-                console.log(`Failed to create mesh for ${node.path}`);
+                console.log(`✓ Created mesh: ${mesh.name}`);
+
             }
         } else if (this.hasCurveGeometry(node)) {
-            console.log(`Node ${node.path} has curve geometry, creating line...`);
             const line = this.createLineFromNode(node, root, options);
             if (line) {
                 element = line;
-                console.log(`Successfully created line for ${node.path}`);
-            } else {
-                console.log(`Failed to create line for ${node.path}`);
             }
-        } else {
-            console.log(`Node ${node.path} has no geometry, creating group`);
         }
 
         parent.add(element);
@@ -118,10 +160,10 @@ export class USDRenderer {
             this.applyTransform(element, node);
         }
 
-        // Recursively render children
-        console.log(`Node ${node.path} has ${node.children.length} children`);
+        // Recursively render children - pass current node as parent context
+        const currentName = node.name || 'Unknown';
         (node.children || []).forEach((child: ComposedNode) => {
-            this.traverseAndRender(child, element, root, options);
+            this.traverseAndRender(child, element, root, options, currentName, node);
         });
     }
 
@@ -138,14 +180,6 @@ export class USDRenderer {
             (key === 'usd::usdgeom::mesh')
         );
 
-        console.log(`Checking mesh geometry for ${node.path}:`, {
-            hasDirectMeshPoints,
-            hasMeshObject,
-            hasAnyMeshAttribute,
-            allAttributes: Object.keys(node.attributes),
-            attributeDetails: node.attributes
-        });
-
         return hasDirectMeshPoints || hasMeshObject || hasAnyMeshAttribute;
     }
 
@@ -154,33 +188,26 @@ export class USDRenderer {
             node.attributes['usd::usdgeom::basiscurves']);
     }
 
-    private createMeshFromNode(node: ComposedNode, root: ComposedNode, options: RenderOptions): THREE.Mesh | null {
+    private createMeshFromNode(node: ComposedNode, root: ComposedNode, options: RenderOptions, parentName?: string, parentNode?: ComposedNode): THREE.Mesh | null {
         try {
-            console.log('Creating mesh for node:', node.path);
-            console.log('Available attributes:', Object.keys(node.attributes));
-
             // Extract geometry data
             let points: number[] | undefined;
             let indices: number[] | undefined;
 
             // Try different attribute formats
             if (node.attributes['usd::usdgeom::mesh::points']) {
-                console.log('Found usd::usdgeom::mesh::points');
                 points = Array.isArray(node.attributes['usd::usdgeom::mesh::points'][0])
                     ? node.attributes['usd::usdgeom::mesh::points'].flat()
                     : node.attributes['usd::usdgeom::mesh::points'];
             }
 
             if (node.attributes['usd::usdgeom::mesh::faceVertexIndices']) {
-                console.log('Found usd::usdgeom::mesh::faceVertexIndices');
                 indices = node.attributes['usd::usdgeom::mesh::faceVertexIndices'];
             }
 
             // Fallback to flattened mesh data
             if (!points && node.attributes['usd::usdgeom::mesh']) {
-                console.log('Found usd::usdgeom::mesh object');
                 const meshData = node.attributes['usd::usdgeom::mesh'];
-                console.log('Mesh data structure:', meshData);
                 if (meshData.points) {
                     points = Array.isArray(meshData.points[0]) ? meshData.points.flat() : meshData.points;
                 }
@@ -189,40 +216,9 @@ export class USDRenderer {
                 }
             }
 
-            // Try the old converter format as fallback
-            if (!points && node.attributes['usd::usdgeom::mesh']) {
-                console.log('Trying old converter format...');
-                const meshAttr = node.attributes['usd::usdgeom::mesh'];
-                if (typeof meshAttr === 'object' && meshAttr !== null) {
-                    // Look for nested points and indices
-                    if (meshAttr.points) {
-                        points = meshAttr.points;
-                        console.log('Found points in mesh object:', points?.length || 0, 'values');
-                    }
-                    if (meshAttr.faceVertexIndices) {
-                        indices = meshAttr.faceVertexIndices;
-                        console.log('Found indices in mesh object:', indices?.length || 0, 'values');
-                    }
-                }
-            }
-
-            // Last resort: look through all attributes for anything that looks like geometry
-            if (!points) {
-                console.log('Searching all attributes for geometry data...');
-                Object.entries(node.attributes).forEach(([key, value]) => {
-                    if (key.includes('mesh') || key.includes('points')) {
-                        console.log(`Attribute ${key}:`, typeof value, Array.isArray(value) ? `array[${value.length}]` : value);
-                    }
-                });
-            }
-
             if (!points || points.length === 0) {
-                console.warn(`No valid points found for mesh node: ${node.path}`);
-                console.log('Node attributes:', node.attributes);
                 return null;
             }
-
-            console.log(`Creating geometry with ${points?.length || 0} point values, ${indices?.length || 0} index values`);
 
             // Create geometry
             const geometry = new THREE.BufferGeometry();
@@ -236,17 +232,47 @@ export class USDRenderer {
 
             // Create material
             const material = options.enableMaterials
-                ? this.createMaterialForNode(node, root)
+                ? this.createMaterialForNode(node, root, parentName, parentNode)
                 : new THREE.MeshLambertMaterial({ color: 0x888888 });
 
             // Create mesh with correct side rendering
             const mesh = new THREE.Mesh(geometry, material);
-            mesh.name = node.name || node.path;
+
+            // Create a more descriptive name by including parent context
+            let meshName = node.name || node.path;
+            if ((meshName === 'Body' || meshName === 'Void') && parentName) {
+                meshName = `${meshName} (${parentName})`;
+            }
+            mesh.name = meshName;
 
             // Attach the composed node to the mesh for property display
             (mesh as any).__composedNode = node;
 
-            console.log('Successfully created mesh:', mesh.name);
+            // Debug mesh positioning and bounds
+            const box = new THREE.Box3().setFromObject(mesh);
+            const size = box.getSize(new THREE.Vector3());
+            const center = box.getCenter(new THREE.Vector3());
+
+            console.log(`📐 Mesh "${meshName}":`, {
+                vertices: points.length / 3,
+                faces: indices ? indices.length / 3 : 0,
+                size: `${size.x.toFixed(2)} × ${size.y.toFixed(2)} × ${size.z.toFixed(2)}`,
+                center: `(${center.x.toFixed(2)}, ${center.y.toFixed(2)}, ${center.z.toFixed(2)})`,
+                bounds: {
+                    min: `(${box.min.x.toFixed(2)}, ${box.min.y.toFixed(2)}, ${box.min.z.toFixed(2)})`,
+                    max: `(${box.max.x.toFixed(2)}, ${box.max.y.toFixed(2)}, ${box.max.z.toFixed(2)})`
+                }
+            });
+
+            // Show first few vertices to understand coordinate system (only for walls)
+            if (parentName && parentName.toLowerCase().includes('wall') && points.length >= 9) {
+                console.log(`🧭 First 3 vertices of "${meshName}":`, [
+                    `(${points[0].toFixed(2)}, ${points[1].toFixed(2)}, ${points[2].toFixed(2)})`,
+                    `(${points[3].toFixed(2)}, ${points[4].toFixed(2)}, ${points[5].toFixed(2)})`,
+                    `(${points[6].toFixed(2)}, ${points[7].toFixed(2)}, ${points[8].toFixed(2)})`
+                ]);
+            }
+
             return mesh;
         } catch (error) {
             console.error('Error creating mesh:', error);
@@ -297,84 +323,186 @@ export class USDRenderer {
         }
     }
 
-    private createMaterialForNode(node: ComposedNode, root: ComposedNode): THREE.Material {
-        // Look for material binding reference
-        const materialRef = node.attributes['usd::usdshade::materialbindingapi::material::binding'];
+    private createMaterialForNode(node: ComposedNode, root: ComposedNode, parentName?: string, parentComposedNode?: ComposedNode): THREE.Material {
+        // Look for material binding on parent node first (like reference viewer)
+        let materialRef = null;
+
+        if (parentComposedNode) {
+            materialRef = parentComposedNode.attributes['usd::usdshade::materialbindingapi::material::binding'];
+            if (materialRef && materialRef.ref) {
+                console.log(`🔗 Found material binding on parent ${parentComposedNode.path}: ${materialRef.ref}`);
+            }
+        }
+
+        // If no parent binding, check current node
+        if (!materialRef) {
+            materialRef = node.attributes['usd::usdshade::materialbindingapi::material::binding'];
+            if (materialRef && materialRef.ref) {
+                console.log(`🔗 Found material binding on current node ${node.path}: ${materialRef.ref}`);
+            }
+        }
 
         if (materialRef && materialRef.ref) {
             // Check cache first
             if (this.materialCache.has(materialRef.ref)) {
+                console.log(`   Using cached material for ${materialRef.ref}`);
                 return this.materialCache.get(materialRef.ref)!;
             }
 
-            // Find the material node in the root tree
+            // Find the material node in the root tree (same as reference viewer)
             const materialNode = this.findNodeByPath(root, materialRef.ref);
             if (materialNode) {
+                console.log(`   Found material node at path: ${materialRef.ref}`);
                 const material = this.createMaterialFromMaterialNode(materialNode);
                 this.materialCache.set(materialRef.ref, material);
                 return material;
+            } else {
+                console.warn(`   Material node not found at path: ${materialRef.ref}`);
             }
         }
 
-        // Default material
-        return new THREE.MeshLambertMaterial({
-            color: 0x888888,
-            transparent: false,
-            opacity: 1,
-            side: THREE.DoubleSide
-        });
+        // Check if parent node has direct color attributes (common case)
+        if (parentComposedNode) {
+            const colorAttr = parentComposedNode.attributes['bsi::ifc::v5a::schema::presentation::diffuseColor'];
+            const opacityAttr = parentComposedNode.attributes['bsi::ifc::v5a::schema::presentation::opacity'];
+
+            if (colorAttr || opacityAttr !== undefined) {
+                console.log(`🎨 Found direct material attributes on parent ${parentComposedNode.path}`);
+
+                let color = new THREE.Color(0.6, 0.6, 0.6);
+                let opacity = 1;
+                let transparent = false;
+
+                if (colorAttr && Array.isArray(colorAttr) && colorAttr.length >= 3) {
+                    color = new THREE.Color(colorAttr[0], colorAttr[1], colorAttr[2]);
+                    console.log(`   Color: [${colorAttr[0]}, ${colorAttr[1]}, ${colorAttr[2]}]`);
+                }
+
+                if (opacityAttr !== undefined) {
+                    opacity = opacityAttr;
+                    transparent = opacity < 1.0;
+                    console.log(`   Opacity: ${opacity} (transparent: ${transparent})`);
+                }
+
+                return new THREE.MeshBasicMaterial({
+                    color: color,
+                    transparent: transparent,
+                    opacity: opacity,
+                    side: THREE.DoubleSide
+                });
+            }
+        }
+
+        // Provide different default materials based on object type/name
+        console.log(`🎨 No specific material found for ${node.path}, assigning default based on type`);
+
+        const objectName = (parentName || node.name || '').toLowerCase();
+
+        if (objectName.includes('wall')) {
+            console.log(`   Wall material for: ${objectName}`);
+            return new THREE.MeshBasicMaterial({
+                color: new THREE.Color(0.8, 0.6, 0.4), // Stronger brown/tan for walls
+                transparent: false,
+                opacity: 1,
+                side: THREE.DoubleSide,
+                polygonOffset: true,
+                polygonOffsetFactor: 1,
+                polygonOffsetUnits: 1
+            });
+        } else if (objectName.includes('window')) {
+            console.log(`   Window material for: ${objectName}`);
+            return new THREE.MeshBasicMaterial({
+                color: new THREE.Color(0.3, 0.6, 0.9), // Stronger blue for windows
+                transparent: true,
+                opacity: 0.7,
+                side: THREE.DoubleSide,
+                polygonOffset: true,
+                polygonOffsetFactor: 2,
+                polygonOffsetUnits: 2
+            });
+        } else if (objectName.includes('space') || objectName.includes('room')) {
+            console.log(`   Space material for: ${objectName}`);
+            return new THREE.MeshBasicMaterial({
+                color: new THREE.Color(0.9, 0.9, 0.9), // Light but not too washed out
+                transparent: true,
+                opacity: 0.15,
+                side: THREE.DoubleSide,
+                polygonOffset: true,
+                polygonOffsetFactor: -1,
+                polygonOffsetUnits: -1
+            });
+        } else if (objectName.includes('slab') || objectName.includes('basis')) {
+            console.log(`   Slab/floor material for: ${objectName}`);
+            return new THREE.MeshBasicMaterial({
+                color: new THREE.Color(0.5, 0.5, 0.6), // Stronger gray for slabs/floors
+                transparent: false,
+                opacity: 1,
+                side: THREE.DoubleSide,
+                polygonOffset: true,
+                polygonOffsetFactor: 0,
+                polygonOffsetUnits: 0
+            });
+        } else {
+            console.log(`   Generic material for: ${objectName}`);
+            return new THREE.MeshBasicMaterial({
+                color: new THREE.Color(0.6, 0.6, 0.6), // Medium gray for other objects
+                transparent: false,
+                opacity: 1,
+                side: THREE.DoubleSide,
+                polygonOffset: true,
+                polygonOffsetFactor: 1,
+                polygonOffsetUnits: 1
+            });
+        }
     }
 
     private createMaterialFromMaterialNode(materialNode: ComposedNode): THREE.Material {
-        const usdMaterial: USDMaterial = {
-            color: new THREE.Color(0.6, 0.6, 0.6),
-            transparent: false,
-            opacity: 1
-        };
+        // Default material properties (same as reference viewer)
+        let color = new THREE.Color(0.6, 0.6, 0.6);
+        let transparent = false;
+        let opacity = 1;
 
-        // Extract color from various possible attributes
-        if (materialNode.attributes['bsi::presentation::diffuseColor']) {
-            const color = materialNode.attributes['bsi::presentation::diffuseColor'];
-            if (Array.isArray(color) && color.length >= 3) {
-                usdMaterial.color = new THREE.Color(color[0], color[1], color[2]);
+        console.log(`🎨 Creating material from node: ${materialNode.path}`);
+
+        // Extract color from diffuseColor attribute - check both full and short names
+        const diffuseColorKeys = [
+            'bsi::ifc::v5a::schema::presentation::diffuseColor',
+            'bsi::presentation::diffuseColor'
+        ];
+
+        for (const key of diffuseColorKeys) {
+            if (materialNode.attributes[key]) {
+                const colorArray = materialNode.attributes[key];
+                if (Array.isArray(colorArray) && colorArray.length >= 3) {
+                    color = new THREE.Color(colorArray[0], colorArray[1], colorArray[2]);
+                    console.log(`   Color: [${colorArray[0]}, ${colorArray[1]}, ${colorArray[2]}]`);
+                    break;
+                }
             }
         }
 
-        // Extract opacity
-        if (materialNode.attributes['bsi::presentation::opacity'] !== undefined) {
-            usdMaterial.opacity = materialNode.attributes['bsi::presentation::opacity'];
-            usdMaterial.transparent = usdMaterial.opacity < 1.0;
+        // Extract opacity - check both full and short names
+        const opacityKeys = [
+            'bsi::ifc::v5a::schema::presentation::opacity',
+            'bsi::presentation::opacity'
+        ];
+
+        for (const key of opacityKeys) {
+            if (materialNode.attributes[key] !== undefined) {
+                opacity = materialNode.attributes[key];
+                transparent = opacity < 1.0;
+                console.log(`   Opacity: ${opacity} (transparent: ${transparent})`);
+                break;
+            }
         }
 
-        // Extract roughness and metallic for PBR
-        if (materialNode.attributes['bsi::presentation::roughness'] !== undefined) {
-            usdMaterial.roughness = materialNode.attributes['bsi::presentation::roughness'];
-        }
-
-        if (materialNode.attributes['bsi::presentation::metallic'] !== undefined) {
-            usdMaterial.metallic = materialNode.attributes['bsi::presentation::metallic'];
-        }
-
-        // Create appropriate Three.js material
-        if (usdMaterial.roughness !== undefined || usdMaterial.metallic !== undefined) {
-            // Use PBR material
-            return new THREE.MeshStandardMaterial({
-                color: usdMaterial.color,
-                transparent: usdMaterial.transparent,
-                opacity: usdMaterial.opacity,
-                roughness: usdMaterial.roughness ?? 0.5,
-                metalness: usdMaterial.metallic ?? 0.0,
-                side: THREE.DoubleSide
-            });
-        } else {
-            // Use Lambert material
-            return new THREE.MeshLambertMaterial({
-                color: usdMaterial.color,
-                transparent: usdMaterial.transparent,
-                opacity: usdMaterial.opacity,
-                side: THREE.DoubleSide
-            });
-        }
+        // Use MeshBasicMaterial like the reference viewer
+        return new THREE.MeshBasicMaterial({
+            color: color,
+            transparent: transparent,
+            opacity: opacity,
+            side: THREE.DoubleSide
+        });
     }
 
     private applyTransform(element: THREE.Object3D, node: ComposedNode): void {
