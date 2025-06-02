@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>IFC5 Multi-File Viewer</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    #viewer {
+      width: 100vw;
+      height: 100vh;
+      position: relative;
+    }
+
+    /* Property panel styles */
+    #properties-panel {
+      font-size: 13px;
+      color: #333;
+    }
+
+    #properties-panel.visible {
+      transform: translateX(0) !important;
+    }
+
+    .property-group {
+      margin-bottom: 16px;
+    }
+
+    .property-group-title {
+      font-weight: 600;
+      font-size: 14px;
+      color: #007bff;
+      margin-bottom: 8px;
+      padding-bottom: 4px;
+      border-bottom: 1px solid #e9ecef;
+    }
+
+    .property-item {
+      display: flex;
+      margin-bottom: 6px;
+      align-items: flex-start;
+    }
+
+    .property-key {
+      font-weight: 500;
+      color: #495057;
+      width: 120px;
+      flex-shrink: 0;
+      margin-right: 8px;
+    }
+
+    .property-value {
+      color: #212529;
+      word-break: break-word;
+      flex: 1;
+    }
+
+    .property-value.array {
+      font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+      font-size: 11px;
+      background: #f8f9fa;
+      padding: 4px 6px;
+      border-radius: 3px;
+      border-left: 3px solid #007bff;
+    }
+
+    .geometry-info {
+      background: #f8f9fa;
+      padding: 12px;
+      border-radius: 6px;
+      border-left: 4px solid #28a745;
+    }
+
+    .no-selection {
+      text-align: center;
+      color: #6c757d;
+      font-style: italic;
+      padding: 20px;
+    }
+
+    /* Loading spinner */
+    .loading::after {
+      content: '';
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      border: 2px solid #007bff;
+      border-radius: 50%;
+      border-top-color: transparent;
+      animation: spin 1s linear infinite;
+      margin-left: 8px;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    /* Responsive adjustments */
+    @media (max-width: 768px) {
+      #ui-container {
+        width: calc(100vw - 40px) !important;
+        max-width: 300px !important;
+      }
+
+      #properties-panel {
+        width: calc(100vw - 40px) !important;
+        max-width: 350px !important;
+        right: 20px !important;
+      }
+
+      .property-key {
+        width: 100px;
+        font-size: 12px;
+      }
+
+      .property-value {
+        font-size: 12px;
+      }
+    }
+
+    /* Hide scrollbars but keep functionality */
+    #ui-container::-webkit-scrollbar,
+    #properties-panel::-webkit-scrollbar {
+      width: 4px;
+    }
+
+    #ui-container::-webkit-scrollbar-track,
+    #properties-panel::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    #ui-container::-webkit-scrollbar-thumb,
+    #properties-panel::-webkit-scrollbar-thumb {
+      background: rgba(0, 0, 0, 0.2);
+      border-radius: 2px;
+    }
+
+    #ui-container::-webkit-scrollbar-thumb:hover,
+    #properties-panel::-webkit-scrollbar-thumb:hover {
+      background: rgba(0, 0, 0, 0.4);
+    }
+  </style>
+</head>
+
+<body>
+  <div id="viewer"></div>
+
+  <!-- The UI will be dynamically created by the JavaScript -->
+  <!-- This includes:
+       - Layer Manager (left panel)
+       - Properties Panel (right panel) 
+       - File upload dialogs
+       - Info displays
+  -->
+
+  <script type="module" src="/src/main.ts"></script>
+</body>
+
+</html>

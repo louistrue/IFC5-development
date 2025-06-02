@@ -297,38 +297,18 @@ function Validate(schemas, inputNodes) {
 function LoadIfcxFile(file, checkSchemas = true, createArtificialRoot = false) {
   let inputNodes = ToInputNodes(file.data);
   let compositionNodes = ConvertNodes(inputNodes);
-  let P;
   try {
     if (checkSchemas) {
-      function fetchJson(url) {
-        return fetch(url)
-          .then(res => {
-            if (!res.ok) {
-              throw new Error(`Failed to fetch ${url}: ${res.status}`);
-            }
-            return res.json();
-          });
-      }
-      function fetchAll(urls) {
-        const promises = urls.map(fetchJson);
-        return Promise.all(promises);
-      }
-      P = fetchAll(Object.values(file.schemas).map(s => s.uri).filter(s => s)).then((results) => {
-        Validate([...results.map(r => r.schemas),file.schemas].reduce((a, b) => ({...a, ...b}), {}) , compositionNodes);
-      });
-    } else {
-      P = Promise.resolve();
+      Validate(file.schemas, compositionNodes);
     }
   } catch (e) {
     throw e;
   }
-  return P.then(() => {
-    if (createArtificialRoot) {
-      return CreateArtificialRoot(compositionNodes);
-    } else {
-      return ExpandFirstRootInInput(compositionNodes);
-    }
-  });
+  if (createArtificialRoot) {
+    return CreateArtificialRoot(compositionNodes);
+  } else {
+    return ExpandFirstRootInInput(compositionNodes);
+  }
 }
 function Federate(files) {
   let result = {
@@ -432,9 +412,8 @@ function TreeNodeToComposedObject(path, node, schemas) {
 }
 function compose3(files) {
   let federated = Federate(files);
-  return LoadIfcxFile(federated, true, true).then(tree => {
-    return TreeNodeToComposedObject("", tree, federated.schemas);
-  });
+  let tree = LoadIfcxFile(federated, true, true);
+  return TreeNodeToComposedObject("", tree, federated.schemas);
 }
 
 // render.ts
@@ -467,15 +446,6 @@ function HasAttr(node, attrName) {
   if (!node || !node.attributes) return false;
   return !!node.attributes[attrName];
 }
-function FindChildWithAttr(node, attrName) {
-  if (!node || !node.children) return void 0;
-  for (let i = 0; i < node.children.length; i++) {
-    if (HasAttr(node.children[i], attrName)) {
-      return node.children[i];
-    }
-  }
-  return void 0;
-}
 function createMaterialFromParent(parent, root) {
   let reference = parent.attributes["usd::usdshade::materialbindingapi::material::binding"];
   let material = {
@@ -486,11 +456,11 @@ function createMaterialFromParent(parent, root) {
   if (reference) {
     const materialNode = getChildByName(root, reference.ref);
     if (materialNode) {
-      let color = materialNode?.attributes["bsi::ifc::v5a::schema::presentation::diffuseColor"];
+      let color = materialNode?.attributes["bsi::presentation::diffuseColor"];
       material.color = new THREE.Color(...color);
-      if (materialNode?.attributes["bsi::ifc::v5a::schema::presentation::opacity"]) {
+      if (materialNode?.attributes["bsi::presentation::opacity"]) {
         material.transparent = true;
-        material.opacity = materialNode.attributes["bsi::ifc::v5a::schema::presentation::opacity"];
+        material.opacity = materialNode.attributes["bsi::presentation::opacity"];
       }
     }
   }
@@ -575,29 +545,28 @@ function composeAndRender() {
   }
   let tree = null;
   let dataArray = datas.map((arr) => arr[1]);
-  compose3(dataArray).then(tree => {
-    if (!tree) {
-      console.error("No result from composition");
-      return;
+  tree = compose3(dataArray);
+  if (!tree) {
+    console.error("No result from composition");
+    return;
+  }
+  traverseTree(tree, scene || init(), tree);
+  if (autoCamera) {
+    const boundingBox = new THREE.Box3();
+    boundingBox.setFromObject(scene);
+    if (!boundingBox.isEmpty()) {
+      let avg = boundingBox.min.clone().add(boundingBox.max).multiplyScalar(0.5);
+      let ext = boundingBox.max.clone().sub(boundingBox.min).length();
+      camera.position.copy(avg.clone().add(new THREE.Vector3(1, 1, 1).normalize().multiplyScalar(ext)));
+      camera.far = ext * 3;
+      camera.updateProjectionMatrix();
+      controls.target.copy(avg);
+      controls.update();
+      autoCamera = false;
     }
-    traverseTree(tree, scene || init(), tree);
-    if (autoCamera) {
-      const boundingBox = new THREE.Box3();
-      boundingBox.setFromObject(scene);
-      if (!boundingBox.isEmpty()) {
-        let avg = boundingBox.min.clone().add(boundingBox.max).multiplyScalar(0.5);
-        let ext = boundingBox.max.clone().sub(boundingBox.min).length();
-        camera.position.copy(avg.clone().add(new THREE.Vector3(1, 1, 1).normalize().multiplyScalar(ext)));
-        camera.far = ext * 3;
-        camera.updateProjectionMatrix();
-        controls.target.copy(avg);
-        controls.update();
-        autoCamera = false;
-      }
-    }
-    buildDomTree(tree, document.querySelector(".tree"));
-    animate();
-  });
+  }
+  buildDomTree(tree, document.querySelector(".tree"));
+  animate();
 }
 function createLayerDom() {
   document.querySelector(".layers div").innerHTML = "";
