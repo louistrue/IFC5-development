@@ -1,34 +1,374 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-<meta charset="UTF-8">
-<title>IFC5 USD Viewer</title>
-<script type="module">
-import * as THREE from 'https://unpkg.com/three@0.171.0/build/three.module.js';
-import { OrbitControls } from 'https://unpkg.com/three@0.171.0/examples/jsm/controls/OrbitControls.js';
-// TinyUSDZLoader.js should be provided from TinyUSDZ project
-import { TinyUSDZLoader } from './TinyUSDZLoader.js';
+  <meta charset="UTF-8">
+  <title>IFC5 USD Viewer</title>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.171.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.171.0/examples/jsm/"
+    }
+  }
+  </script>
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 1000);
-camera.position.set(5,5,5);
-const renderer = new THREE.WebGLRenderer({antialias:true});
-renderer.setSize(window.innerWidth, window.innerHeight);
-document.body.appendChild(renderer.domElement);
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x222222);
 
-const controls = new OrbitControls(camera, renderer.domElement);
-controls.update();
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera.position.set(5, 5, 5);
 
-const loader = new TinyUSDZLoader();
-loader.load('hellowall.usdz', obj => {
-  scene.add(obj);
-  renderer.setAnimationLoop(() => {
+    const renderer = new THREE.WebGLRenderer({
+      antialias: true,
+      alpha: true // Enable alpha channel for transparency
+    });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.sortObjects = true; // Enable depth sorting for transparent objects
+    renderer.setClearColor(0x222222, 1.0); // Set background with full opacity
+    document.body.appendChild(renderer.domElement);
+
+    // Add some lighting
+    const ambientLight = new THREE.AmbientLight(0x404040, 0.5);
+    scene.add(ambientLight);
+
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+    directionalLight.position.set(10, 10, 5);
+    directionalLight.castShadow = true;
+    scene.add(directionalLight);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
     controls.update();
-    renderer.render(scene, camera);
-  });
-});
-</script>
+
+    // Selection and interaction variables
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+    let selectedObjects = [];
+    let allMeshes = [];
+    let hiddenObjects = [];
+
+    // Material for highlighting selected objects
+    const highlightMaterial = new THREE.MeshLambertMaterial({
+      color: 0xffff00,
+      transparent: true,
+      opacity: 0.7,
+      side: THREE.DoubleSide
+    });
+
+    // Store original materials
+    const originalMaterials = new Map();
+
+    // Add UI instructions
+    const instructions = document.createElement('div');
+    instructions.style.position = 'absolute';
+    instructions.style.top = '10px';
+    instructions.style.left = '10px';
+    instructions.style.color = 'white';
+    instructions.style.fontFamily = 'monospace';
+    instructions.style.fontSize = '14px';
+    instructions.style.background = 'rgba(0,0,0,0.7)';
+    instructions.style.padding = '10px';
+    instructions.style.borderRadius = '5px';
+    instructions.innerHTML = `
+    <strong>Controls:</strong><br>
+    • Click object to select/deselect<br>
+    • H = Hide selected objects<br>
+    • S = Show selected objects<br>
+    • A = Show all objects<br>
+    • Ctrl+Click = Multi-select
+    `;
+    document.body.appendChild(instructions);
+
+    // Function to parse USDA text and create Three.js geometry
+    function parseUSDAMesh(usdaText) {
+      const meshes = [];
+      const meshRegex = /def Mesh "(.*?)" \{([\s\S]*?)\n\}/g;
+
+      let match;
+      while ((match = meshRegex.exec(usdaText)) !== null) {
+        const meshName = match[1];
+        const meshContent = match[2];
+
+        // Extract face vertex indices
+        const indicesMatch = meshContent.match(/int\[\] faceVertexIndices = \[(.*?)\]/s);
+        // Extract points
+        const pointsMatch = meshContent.match(/point3f\[\] points = \[(.*?)\]/s);
+
+        if (indicesMatch && pointsMatch) {
+          try {
+            // Parse indices
+            const indices = indicesMatch[1].split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n));
+
+            // Parse points - extract coordinate triplets
+            const pointsStr = pointsMatch[1];
+            const coordMatches = pointsStr.match(/\((.*?)\)/g);
+            const vertices = [];
+
+            if (coordMatches) {
+              coordMatches.forEach(coord => {
+                const vals = coord.slice(1, -1).split(',').map(s => parseFloat(s.trim()));
+                if (vals.length === 3 && vals.every(v => !isNaN(v))) {
+                  vertices.push(...vals);
+                }
+              });
+            }
+
+            console.log(`Parsed mesh ${meshName}: ${vertices.length / 3} vertices, ${indices.length / 3} faces`);
+
+            if (vertices.length > 0 && indices.length > 0) {
+              // Create Three.js geometry
+              const geometry = new THREE.BufferGeometry();
+              geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+              geometry.setIndex(indices);
+              geometry.computeVertexNormals();
+
+              // Extract material properties from USD (if any)
+              let opacity = 1.0;
+              let color = 0x70B7FD;
+
+              // Look for opacity in USD content
+              const opacityMatch = meshContent.match(/float inputs:opacity = ([\d.]+)/);
+              if (opacityMatch) {
+                opacity = Math.max(0.0, Math.min(1.0, parseFloat(opacityMatch[1])));
+              }
+
+              // Look for color in USD content
+              const colorMatch = meshContent.match(/color3f inputs:diffuseColor = \(([\d.,\s]+)\)/);
+              if (colorMatch) {
+                const colorVals = colorMatch[1].split(',').map(s => parseFloat(s.trim()));
+                if (colorVals.length === 3) {
+                  color = new THREE.Color(colorVals[0], colorVals[1], colorVals[2]);
+                }
+              }
+
+              // Create material with proper transparency handling
+              const material = new THREE.MeshLambertMaterial({
+                color: color,
+                side: THREE.DoubleSide,
+                transparent: true,
+                opacity: opacity,
+                alphaTest: 0.01, // Helps with depth sorting issues
+                depthWrite: opacity >= 0.99 // Only write depth for fully opaque objects
+              });
+
+              const mesh = new THREE.Mesh(geometry, material);
+              mesh.name = meshName;
+              meshes.push(mesh);
+
+              // Store original material for later restoration
+              originalMaterials.set(mesh, material);
+            }
+          } catch (error) {
+            console.error(`Error parsing mesh ${meshName}:`, error);
+          }
+        }
+      }
+
+      return meshes;
+    }
+
+    // Load and parse USDA file directly
+    fetch('hellowall.usda')
+      .then(response => response.text())
+      .then(usdaText => {
+        console.log('USDA file loaded, parsing geometry...');
+
+        const meshes = parseUSDAMesh(usdaText);
+        console.log(`Created ${meshes.length} meshes`);
+
+        if (meshes.length > 0) {
+          // Add all meshes to scene and track them
+          const group = new THREE.Group();
+          meshes.forEach(mesh => {
+            group.add(mesh);
+            allMeshes.push(mesh); // Add to selection array
+          });
+          scene.add(group);
+
+          // Center and fit camera
+          const box = new THREE.Box3().setFromObject(group);
+          const center = box.getCenter(new THREE.Vector3());
+          const size = box.getSize(new THREE.Vector3());
+
+          console.log('Bounding box:', box);
+          console.log('Center:', center);
+          console.log('Size:', size);
+          console.log(`Loaded ${allMeshes.length} selectable meshes`);
+
+          group.position.sub(center);
+
+          const maxDim = Math.max(size.x, size.y, size.z);
+          if (maxDim > 0) {
+            camera.position.set(maxDim * 2, maxDim * 2, maxDim * 2);
+            camera.lookAt(0, 0, 0);
+            controls.update();
+          }
+        } else {
+          console.warn('No meshes found in USDA file');
+          // Add fallback cube
+          const geometry = new THREE.BoxGeometry(1, 1, 1);
+          const material = new THREE.MeshBasicMaterial({ color: 0xff0000, wireframe: true });
+          const cube = new THREE.Mesh(geometry, material);
+          scene.add(cube);
+        }
+      })
+      .catch(error => {
+        console.error('Error loading USDA file:', error);
+        // Add fallback cube on error
+        const geometry = new THREE.BoxGeometry(1, 1, 1);
+        const material = new THREE.MeshBasicMaterial({ color: 0xff0000, wireframe: true });
+        const cube = new THREE.Mesh(geometry, material);
+        scene.add(cube);
+      });
+
+    // Animation loop
+    function animate() {
+      requestAnimationFrame(animate);
+      controls.update();
+      renderer.render(scene, camera);
+    }
+    animate();
+
+    // Handle window resize
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    // Selection functions
+    function selectObject(object, multiSelect = false) {
+      if (!multiSelect) {
+        // Clear previous selection if not multi-selecting
+        clearSelection();
+      }
+
+      if (selectedObjects.includes(object)) {
+        // Deselect if already selected
+        deselectObject(object);
+      } else {
+        // Select the object
+        selectedObjects.push(object);
+        object.material = highlightMaterial;
+        console.log(`Selected: ${object.name}`);
+      }
+
+      updateSelectionUI();
+    }
+
+    function deselectObject(object) {
+      const index = selectedObjects.indexOf(object);
+      if (index > -1) {
+        selectedObjects.splice(index, 1);
+        object.material = originalMaterials.get(object);
+        console.log(`Deselected: ${object.name}`);
+      }
+    }
+
+    function clearSelection() {
+      selectedObjects.forEach(obj => {
+        obj.material = originalMaterials.get(obj);
+      });
+      selectedObjects = [];
+      updateSelectionUI();
+    }
+
+    function hideSelectedObjects() {
+      selectedObjects.forEach(obj => {
+        obj.visible = false;
+        if (!hiddenObjects.includes(obj)) {
+          hiddenObjects.push(obj);
+        }
+      });
+      console.log(`Hidden ${selectedObjects.length} objects`);
+      clearSelection();
+    }
+
+    function showSelectedObjects() {
+      selectedObjects.forEach(obj => {
+        obj.visible = true;
+        const index = hiddenObjects.indexOf(obj);
+        if (index > -1) {
+          hiddenObjects.splice(index, 1);
+        }
+      });
+      console.log(`Showed ${selectedObjects.length} objects`);
+    }
+
+    function showAllObjects() {
+      allMeshes.forEach(obj => {
+        obj.visible = true;
+      });
+      hiddenObjects = [];
+      console.log('Showed all objects');
+    }
+
+    function updateSelectionUI() {
+      // You could add a selection counter UI here if needed
+      console.log(`Selected objects: ${selectedObjects.length}`);
+    }
+
+    // Mouse event handlers
+    function onMouseClick(event) {
+      // Calculate mouse position in normalized device coordinates
+      const rect = renderer.domElement.getBoundingClientRect();
+      mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+      mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+      // Update the picking ray with the camera and mouse position
+      raycaster.setFromCamera(mouse, camera);
+
+      // Calculate objects intersecting the picking ray
+      const intersects = raycaster.intersectObjects(allMeshes);
+
+      if (intersects.length > 0) {
+        const selectedObject = intersects[0].object;
+        selectObject(selectedObject, event.ctrlKey || event.metaKey);
+
+        // Prevent orbit controls from handling this click
+        event.stopPropagation();
+      } else {
+        // Clicked on empty space - clear selection if not holding Ctrl
+        if (!event.ctrlKey && !event.metaKey) {
+          clearSelection();
+        }
+      }
+    }
+
+    // Keyboard event handlers
+    function onKeyDown(event) {
+      switch (event.key.toLowerCase()) {
+        case 'h':
+          if (selectedObjects.length > 0) {
+            hideSelectedObjects();
+          }
+          break;
+        case 's':
+          if (selectedObjects.length > 0) {
+            showSelectedObjects();
+          }
+          break;
+        case 'a':
+          showAllObjects();
+          break;
+        case 'escape':
+          clearSelection();
+          break;
+      }
+    }
+
+    // Add event listeners
+    renderer.domElement.addEventListener('click', onMouseClick, false);
+    document.addEventListener('keydown', onKeyDown, false);
+  </script>
 </head>
-<body>
+
+<body style="margin: 0; overflow: hidden;">
 </body>
+
 </html>
