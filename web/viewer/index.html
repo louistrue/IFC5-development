@@ -274,12 +274,12 @@
                     try {
                         json = JSON.parse(e.target.result);
                     } catch(e) {
-                        document.querySelector('.error-modal .message').innerHTML = e.message;
+                        document.querySelector('.error-modal .message').textContent = String(e.message);
                         document.querySelector('.error-modal').style.display = 'block';
                     }
                     if (json) {
                         addModel(file.name, json).catch(e => {
-                            document.querySelector('.error-modal .message').innerHTML = e.message;
+                            document.querySelector('.error-modal .message').textContent = String(e.message);
                             document.querySelector('.error-modal').style.display = 'block';
                         });
                     }
@@ -297,7 +297,7 @@
                     addModel(name, j);
                 })
                 .catch(e => {
-                    document.querySelector('.error-modal .message').innerHTML = e.message;
+                    document.querySelector('.error-modal .message').textContent = String(e.message);
                     document.querySelector('.error-modal').style.display = 'block';
                 });
         });
