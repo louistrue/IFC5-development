@@ -1,0 +1,29 @@
+{
+    "header": {
+        "id": "demo/layered-composition/viewer/fire@v1.ifcx",
+        "ifcxVersion": "ifcx_alpha",
+        "dataVersion": "1.0.0",
+        "author": "@fire",
+        "timestamp": "2026-06-02"
+    },
+    "imports": [],
+    "schemas": {
+        "demo::discipline::fire": { "value": { "dataType": "Boolean" } },
+        "demo::fireRatingMinutes": { "value": { "dataType": "Integer" } },
+        "demo::fireRatingClass": { "value": { "dataType": "String" } },
+        "bsi::ifc::presentation::diffuseColor": {
+            "value": { "dataType": "Array", "arrayRestrictions": { "value": { "dataType": "Real" } } }
+        }
+    },
+    "data": [
+        {
+            "path": "2a3b1c00-0000-4000-8000-000000000c01",
+            "attributes": {
+                "demo::discipline::fire": true,
+                "demo::fireRatingMinutes": 90,
+                "demo::fireRatingClass": "R90",
+                "bsi::ifc::presentation::diffuseColor": [0.85, 0.15, 0.1]
+            }
+        }
+    ]
+}

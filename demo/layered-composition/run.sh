@@ -56,4 +56,17 @@ cat > "$OUT/bad2.ifcx" <<'JSON'
 JSON
 run "$HERE/architect.ifcx" "$HERE/fire.ifcx" "$OUT/bad2.ifcx" "$OUT/bad2.json" | head -1
 
+# --- STAGE 2: geometry + colour-driven-by-layer (data-level check) -----------
+line "S2  viewer layers: column colour flips grey -> red when fire layer is added"
+run "$HERE/viewer/architect.ifcx" "$HERE/viewer/structural.ifcx" "$OUT/grey.json"
+run "$HERE/viewer/architect.ifcx" "$HERE/viewer/structural.ifcx" "$HERE/viewer/fire.ifcx" "$OUT/red.json"
+COL=2a3b1c00-0000-4000-8000-000000000c01
+node -e "const f=p=>JSON.parse(require('fs').readFileSync(p)).children['$COL'].attributes;
+const g=f('$OUT/grey.json'), r=f('$OUT/red.json');
+console.log('  architect+structural -> diffuseColor', JSON.stringify(g['bsi::ifc::presentation::diffuseColor']),
+            '| mesh pts', g['usd::usdgeom::mesh'].points.length);
+console.log('  + fire               -> diffuseColor', JSON.stringify(r['bsi::ifc::presentation::diffuseColor']),
+            '| fireRating', r['demo::fireRatingMinutes'], r['demo::fireRatingClass']);"
+echo "  -> render it live with:  (cd $SRC && npm run serve)  then load viewer/{architect,structural,fire}.ifcx in order"
+
 printf '\n\033[1mDone.\033[0m Composed outputs are in %s\n' "$OUT"

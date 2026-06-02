@@ -61,23 +61,36 @@ node ifcx-cli.js compose --no-fetch $D/architect.ifcx $D/structural.ifcx $D/fire
 
 ---
 
-## Stage 2 — Make it visual (reference viewer)
+## Stage 2 — Make it visual (reference viewer) ✅ built
 
-Goal: render the column in `web/viewer`, click it, watch the **property panel**
-(`src/viewer/render.ts` → `handleClick`) show the *merged* attributes; then make a later
-layer *visibly* change the column.
+Same three disciplines, now with geometry, in [`viewer/`](viewer/):
 
-Steps:
-1. Add real geometry to the architect layer — a box mesh + `usd::xformop::transform`
-   (copy the shape of an existing example, e.g. `examples/Hello Wall/*`). Geometry is just
-   another attribute opinion.
-2. Build + serve: `cd src && npm run serve` (esbuild builds `render.mjs`, serves `web/viewer`).
-3. Drag the composed file in; click the column → merged attributes appear.
-4. **Punchline:** drive a material/colour from a later layer (e.g. fire layer → red tint, or a
-   "R90" badge) so *adding a layer visibly changes the model*, not just the JSON.
+- [`viewer/architect.ifcx`](viewer/architect.ifcx) — adds a **box mesh** (`usd::usdgeom::mesh`)
+  for the column + a default **grey** material (`bsi::ifc::presentation::diffuseColor`).
+- [`viewer/structural.ifcx`](viewer/structural.ifcx) — the structural opinions (as Stage 1).
+- [`viewer/fire.ifcx`](viewer/fire.ifcx) — the fire opinions **and overrides the colour to red**.
 
-> Note: the web viewer composes internally; feed it the layer file(s), not the
-> `NodeToJSON` tree that the CLI prints.
+The web viewer federates every loaded file itself (`src/viewer/compose-flattened.ts` →
+`compose3`), so you just load the three layers — no pre-compose step.
+
+```bash
+cd src && npm run serve          # esbuild builds render.mjs + serves web/viewer
+# open the printed localhost URL
+```
+
+In the viewer's **Layer browser** ("lower takes priority"), load the files **in order
+architect → structural → fire** (the file picker is multi-select). Then:
+
+1. The column renders. **Click it** → the *Selection attributes* panel
+   (`render.ts` → `handleClick`) shows the **merged** set: name, height **3.2** (structural's
+   as-built won), load-bearing, S355, fire R90.
+2. **Punchline:** the column is **grey** with only architect+structural loaded, and turns
+   **red** the moment the fire layer is added — *adding a layer visibly changes the model*,
+   not just the JSON. (Verified at the data level: `diffuseColor` composes
+   `[0.6,0.6,0.6] → [0.85,0.15,0.1]`.)
+
+> These files are fully offline (inline schemas, no `imports`), so they also compose in the
+> CLI — `run.sh` verifies the grey→red colour flip headlessly.
 
 ---
 

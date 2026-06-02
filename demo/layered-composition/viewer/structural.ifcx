@@ -1,0 +1,32 @@
+{
+    "header": {
+        "id": "demo/layered-composition/viewer/structural@v1.ifcx",
+        "ifcxVersion": "ifcx_alpha",
+        "dataVersion": "1.0.0",
+        "author": "@structural",
+        "timestamp": "2026-06-02"
+    },
+    "imports": [],
+    "schemas": {
+        "demo::discipline::structural": { "value": { "dataType": "Boolean" } },
+        "demo::loadBearing": { "value": { "dataType": "Boolean" } },
+        "demo::steelGrade": {
+            "value": {
+                "dataType": "Enum",
+                "enumRestrictions": { "options": ["S235", "S275", "S355", "S460"] }
+            }
+        },
+        "demo::height": { "value": { "dataType": "Real" } }
+    },
+    "data": [
+        {
+            "path": "2a3b1c00-0000-4000-8000-000000000c01",
+            "attributes": {
+                "demo::discipline::structural": true,
+                "demo::loadBearing": true,
+                "demo::steelGrade": "S355",
+                "demo::height": 3.2
+            }
+        }
+    ]
+}
