@@ -1,0 +1,38 @@
+{
+    "header": {
+        "id": "demo/layered-composition/architect@v1.ifcx",
+        "ifcxVersion": "ifcx_alpha",
+        "dataVersion": "1.0.0",
+        "author": "@architect",
+        "timestamp": "2026-06-02"
+    },
+    "imports": [],
+    "schemas": {
+        "demo::name": { "value": { "dataType": "String" } },
+        "demo::discipline::architect": { "value": { "dataType": "Boolean" } },
+        "demo::height": { "value": { "dataType": "Real" } },
+        "demo::location": {
+            "value": {
+                "dataType": "Object",
+                "objectRestrictions": {
+                    "values": {
+                        "level": { "dataType": "String" },
+                        "gridX": { "dataType": "String" },
+                        "gridY": { "dataType": "String" }
+                    }
+                }
+            }
+        }
+    },
+    "data": [
+        {
+            "path": "2a3b1c00-0000-4000-8000-000000000c01",
+            "attributes": {
+                "demo::name": "Column-1",
+                "demo::discipline::architect": true,
+                "demo::height": 3.0,
+                "demo::location": { "level": "L01", "gridX": "A", "gridY": "2" }
+            }
+        }
+    ]
+}
