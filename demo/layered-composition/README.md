@@ -92,6 +92,19 @@ architect → structural → fire** (the file picker is multi-select). Then:
 > These files are fully offline (inline schemas, no `imports`), so they also compose in the
 > CLI — `run.sh` verifies the grey→red colour flip headlessly.
 
+### Headless stills (no browser)
+
+For environments without WebGL, [`viewer/render-still.mjs`](viewer/render-still.mjs) is a
+~150-line, dependency-free software rasterizer (built-in `zlib` only) that renders a composed
+column to PNG:
+
+```bash
+node demo/layered-composition/viewer/render-still.mjs <composed.json> out.png
+```
+
+`run.sh` writes `column-grey.png` / `column-red.png` this way. Back-face culling draws exactly
+6 of the box's 12 triangles, which doubles as a check that the mesh winding is outward.
+
 ---
 
 ## Stage 3 — Geometry tiers (`LTplus-AG/IFCX@louistrue-geometry-tiers`)

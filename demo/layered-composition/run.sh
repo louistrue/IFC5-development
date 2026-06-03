@@ -67,6 +67,9 @@ console.log('  architect+structural -> diffuseColor', JSON.stringify(g['bsi::ifc
             '| mesh pts', g['usd::usdgeom::mesh'].points.length);
 console.log('  + fire               -> diffuseColor', JSON.stringify(r['bsi::ifc::presentation::diffuseColor']),
             '| fireRating', r['demo::fireRatingMinutes'], r['demo::fireRatingClass']);"
+# headless stills (pure-Node software rasterizer; back-face cull verifies winding)
+node "$HERE/viewer/render-still.mjs" "$OUT/grey.json" "$OUT/column-grey.png"
+node "$HERE/viewer/render-still.mjs" "$OUT/red.json"  "$OUT/column-red.png"
 echo "  -> render it live with:  (cd $SRC && npm run serve)  then load viewer/{architect,structural,fire}.ifcx in order"
 
 printf '\n\033[1mDone.\033[0m Composed outputs are in %s\n' "$OUT"
