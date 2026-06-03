@@ -1,0 +1,99 @@
+{
+  "header": {
+    "id": "demo/.../tiers/profile@v1.ifcx",
+    "ifcxVersion": "ifcx_alpha",
+    "dataVersion": "1.0.0",
+    "author": "@architect",
+    "timestamp": "2026-06-02"
+  },
+  "imports": [],
+  "schemas": {
+    "usd::usdgeom::mesh": {
+      "value": {
+        "dataType": "Object"
+      }
+    },
+    "usd::usdgeom::basiscurves": {
+      "value": {
+        "dataType": "Object"
+      }
+    }
+  },
+  "data": [
+    {
+      "path": "2a3b1c00-0000-4000-8000-000000000c01",
+      "attributes": {
+        "usd::usdgeom::mesh": null,
+        "usd::usdgeom::basiscurves": {
+          "points": [
+            [
+              -0.1,
+              -0.1,
+              0
+            ],
+            [
+              0.1,
+              -0.1,
+              0
+            ],
+            [
+              0.1,
+              -0.07,
+              0
+            ],
+            [
+              0.012,
+              -0.07,
+              0
+            ],
+            [
+              0.012,
+              0.07,
+              0
+            ],
+            [
+              0.1,
+              0.07,
+              0
+            ],
+            [
+              0.1,
+              0.1,
+              0
+            ],
+            [
+              -0.1,
+              0.1,
+              0
+            ],
+            [
+              -0.1,
+              0.07,
+              0
+            ],
+            [
+              -0.012,
+              0.07,
+              0
+            ],
+            [
+              -0.012,
+              -0.07,
+              0
+            ],
+            [
+              -0.1,
+              -0.07,
+              0
+            ],
+            [
+              -0.1,
+              -0.1,
+              0
+            ]
+          ]
+        }
+      }
+    }
+  ]
+}
