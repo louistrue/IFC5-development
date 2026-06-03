@@ -14,6 +14,11 @@ const [, , inPath, outPath] = process.argv;
 if (!inPath || !outPath) { console.error("usage: node render-still.mjs <composed.json> <out.png>"); process.exit(1); }
 
 // --- find the first mesh node in a composed ifcx tree -------------------------
+/**
+ * Depth-first search for the first node carrying a `usd::usdgeom::mesh` attribute.
+ * @param {object} node - a composed ifcx node (with `attributes` and `children`).
+ * @returns {object|null} the first mesh-bearing node, or null if none exists.
+ */
 function findMesh(node) {
   const a = node.attributes || {};
   if (a["usd::usdgeom::mesh"]) return node;
@@ -29,9 +34,13 @@ const idx = mesh.faceVertexIndices;              // [i0,i1,i2, ...]
 const col = node.attributes["bsi::ifc::presentation::diffuseColor"] || [0.6, 0.6, 0.6];
 
 // --- tiny vec3 ----------------------------------------------------------------
+/** Vector subtraction a - b. */
 const sub = (a, b) => [a[0]-b[0], a[1]-b[1], a[2]-b[2]];
+/** Vector cross product a × b. */
 const cross = (a, b) => [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]];
+/** Vector dot product a · b. */
 const dot = (a, b) => a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
+/** Normalize a vector to unit length (zero-safe). */
 const norm = (a) => { const l = Math.hypot(...a) || 1; return [a[0]/l, a[1]/l, a[2]/l]; };
 
 // --- camera (z-up, matches the viewer) ---------------------------------------
@@ -41,6 +50,11 @@ const fwd = norm(sub(T, C)), right = norm(cross(fwd, UP)), up = cross(right, fwd
 const tanHalf = Math.tan((38 * Math.PI / 180) / 2);
 const light = norm([0.55, 0.45, 0.8]); // from upper-front so camera-facing sides are lit
 
+/**
+ * Project a world-space point to screen pixel coordinates with a pinhole camera.
+ * @param {number[]} p - world point [x, y, z].
+ * @returns {{px:number, py:number, z:number}|null} pixel coords + view depth, or null if behind the camera.
+ */
 function project(p) {
   const r = sub(p, C);
   const x = dot(r, right), y = dot(r, up), z = dot(r, fwd); // z = depth (forward)
@@ -56,6 +70,13 @@ for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
   fb[o] = 232 - t*40; fb[o+1] = 238 - t*36; fb[o+2] = 245 - t*22;
 }
 
+/**
+ * Rasterize one screen-space triangle into the framebuffer with z-buffering.
+ * @param {{px:number,py:number,z:number}} a - first projected vertex.
+ * @param {{px:number,py:number,z:number}} b - second projected vertex.
+ * @param {{px:number,py:number,z:number}} c - third projected vertex.
+ * @param {number[]} rgb - flat-shaded colour as [r, g, b] in 0..255.
+ */
 function tri(a, b, c, rgb) {
   const minX = Math.max(0, Math.floor(Math.min(a.px, b.px, c.px)));
   const maxX = Math.min(W-1, Math.ceil(Math.max(a.px, b.px, c.px)));
@@ -99,6 +120,13 @@ for (let t = 0; t < idx.length; t += 3) {
 }
 
 // --- PNG encode (truecolor, filter 0) ----------------------------------------
+/**
+ * Encode an RGB framebuffer as a PNG (8-bit truecolour, filter 0, zlib IDAT).
+ * @param {Buffer} buf - raw RGB pixels, length w*h*3.
+ * @param {number} w - image width in pixels.
+ * @param {number} h - image height in pixels.
+ * @returns {Buffer} the complete PNG file bytes.
+ */
 function png(buf, w, h) {
   const raw = Buffer.alloc((w*3 + 1) * h);
   for (let y = 0; y < h; y++) { raw[y*(w*3+1)] = 0; buf.copy(raw, y*(w*3+1)+1, y*w*3, y*w*3 + w*3); }

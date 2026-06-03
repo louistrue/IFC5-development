@@ -25,7 +25,7 @@
                 "demo::discipline::structural": true,
                 "demo::loadBearing": true,
                 "demo::steelGrade": "S355",
-                "demo::height": 3.2
+                "demo::height": 3.0
             }
         }
     ]

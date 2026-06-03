@@ -8,6 +8,11 @@
   },
   "imports": [],
   "schemas": {
+    "usd::usdgeom::mesh": {
+      "value": {
+        "dataType": "Object"
+      }
+    },
     "usd::usdgeom::basiscurves": {
       "value": {
         "dataType": "Object"
@@ -18,6 +23,7 @@
     {
       "path": "2a3b1c00-0000-4000-8000-000000000c01",
       "attributes": {
+        "usd::usdgeom::mesh": null,
         "usd::usdgeom::basiscurves": {
           "points": [
             [

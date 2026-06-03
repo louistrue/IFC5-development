@@ -26,8 +26,13 @@ const P = [
 ];
 
 // --- extrude a closed profile into a solid mesh ------------------------------
-// `capTris` triangulates ONE cap as triples of profile indices (rendered
-// double-sided, so winding is irrelevant to visibility).
+/**
+ * Extrude a closed 2D profile along +z into a solid triangle mesh.
+ * @param {number[][]} profile - profile vertices as [x, y] pairs, in ring order.
+ * @param {number[][]} capTris - triangulation of ONE cap, as triples of profile
+ *   indices. Rendered double-sided, so cap winding is irrelevant to visibility.
+ * @returns {{points:number[][], faceVertexIndices:number[]}} the extruded mesh.
+ */
 function extrude(profile, capTris) {
   const n = profile.length;
   const points = [];
@@ -48,6 +53,14 @@ const iCap = [[0,1,2],[0,2,11], [10,3,4],[10,4,9], [8,5,6],[8,6,7]];
 // --- box (boundary) ----------------------------------------------------------
 const box = extrude([[-hx, -hy], [hx, -hy], [hx, hy], [-hx, hy]], [[0,1,2],[0,2,3]]);
 
+/**
+ * Build a minimal, offline IFCX layer document for the demo column.
+ * @param {string} id - the layer's `header.id`.
+ * @param {string} author - the layer's `header.author` (the discipline).
+ * @param {object} attrs - attributes to assert on the column path.
+ * @param {object} schemas - schema definitions for those attributes.
+ * @returns {object} an IFCX file object ready for JSON serialization.
+ */
 function file(id, author, attrs, schemas) {
   return {
     header: { id, ifcxVersion: "ifcx_alpha", dataVersion: "1.0.0", author, timestamp: "2026-06-02" },
@@ -59,8 +72,12 @@ const meshSchema = { "usd::usdgeom::mesh": { value: { dataType: "Object" } } };
 const curveSchema = { "usd::usdgeom::basiscurves": { value: { dataType: "Object" } } };
 
 const tiers = {
+  // tier P also tombstones the inherited mesh (null) so the architect's box does
+  // not win over the profile curve in the viewer's mesh-before-curve traversal.
   "tier-P.ifcx": file("demo/.../tiers/profile@v1.ifcx", "@architect",
-    { "usd::usdgeom::basiscurves": { points: [...P, P[0]].map(([x, y]) => [x, y, 0]) } }, curveSchema),
+    { "usd::usdgeom::mesh": null,
+      "usd::usdgeom::basiscurves": { points: [...P, P[0]].map(([x, y]) => [x, y, 0]) } },
+    { ...meshSchema, ...curveSchema }),
   "tier-B.ifcx": file("demo/.../tiers/boundary@v1.ifcx", "@architect",
     { "usd::usdgeom::mesh": box }, meshSchema),
   "tier-M.ifcx": file("demo/.../tiers/mesh@v1.ifcx", "@structural",

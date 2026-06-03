@@ -27,7 +27,7 @@ repo's own `src/ifcx-core/composition` + `ifcx-cli compose`. Nothing new added t
 
 **Beat 1 — federation (cumulative).** The column's attribute set grows as layers stack:
 
-```
+```text
 architect            -> { name, height:3.0, location, … }
 + structural         -> { …, loadBearing, steelGrade:S355, height:3.2 }   # height overridden
 + fire               -> { …, fireRatingMinutes:90, fireRatingClass:R90 }  # full column
@@ -40,7 +40,7 @@ the stack* — the same rule as USD's "strongest opinion wins."
 
 **Beat 3 — closed-world validation rejects bad opinions.**
 
-```
+```text
 steelGrade "S999"        -> Expected "S999" to be one of [S235,S275,S355,S460]
 fireRatingMinutes "ninety" -> Expected "ninety" to be of type int
 ```
@@ -82,8 +82,9 @@ In the viewer's **Layer browser** ("lower takes priority"), load the files **in 
 architect → structural → fire** (the file picker is multi-select). Then:
 
 1. The column renders. **Click it** → the *Selection attributes* panel
-   (`render.ts` → `handleClick`) shows the **merged** set: name, height **3.2** (structural's
-   as-built won), load-bearing, S355, fire R90.
+   (`render.ts` → `handleClick`) shows the **merged** set: name, height (3.0, matching the
+   mesh), load-bearing, S355, fire R90. (The height *conflict* is demonstrated in Stage 1; the
+   viewer layers keep height at 3.0 so the attribute and the drawn geometry stay consistent.)
 2. **Punchline:** the column is **grey** with only architect+structural loaded, and turns
    **red** the moment the fire layer is added — *adding a layer visibly changes the model*,
    not just the JSON. (Verified at the data level: `diffuseColor` composes
