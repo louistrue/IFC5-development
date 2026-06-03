@@ -72,4 +72,10 @@ node "$HERE/viewer/render-still.mjs" "$OUT/grey.json" "$OUT/column-grey.png"
 node "$HERE/viewer/render-still.mjs" "$OUT/red.json"  "$OUT/column-red.png"
 echo "  -> render it live with:  (cd $SRC && npm run serve)  then load viewer/{architect,structural,fire}.ifcx in order"
 
+# --- STAGE 3: geometry tiers (P/B/M) -- fidelity as a composable opinion ------
+line "S3  geometry tiers: a later layer upgrades the box (B) to a steel I-section (M)"
+node "$HERE/tiers/gen-tiers.mjs"
+run "$HERE/viewer/architect.ifcx" "$HERE/viewer/structural.ifcx" "$HERE/viewer/fire.ifcx" "$HERE/tiers/tier-M.ifcx" "$OUT/tierM.json"
+DOUBLE=1 node "$HERE/viewer/render-still.mjs" "$OUT/tierM.json" "$OUT/column-isection.png"
+
 printf '\n\033[1mDone.\033[0m Composed outputs are in %s\n' "$OUT"

@@ -107,18 +107,41 @@ node demo/layered-composition/viewer/render-still.mjs <composed.json> out.png
 
 ---
 
-## Stage 3 — Geometry tiers (`LTplus-AG/IFCX@louistrue-geometry-tiers`)
+## Stage 3 — Geometry tiers (P/B/M) ✅ illustrated
 
-The architect's *geometry* opinion becomes **tiered — P/B/M** (Profile → Boundary → Mesh),
-with selective per-tier loading and SVG profile rendering (commit *"Ship geometry tiers P/B/M
-with latent-path face addressing"*).
+Fidelity is itself a composable opinion. [`tiers/gen-tiers.mjs`](tiers/gen-tiers.mjs)
+procedurally emits the same column at three tiers, each a layer that overrides
+`usd::usdgeom::mesh`:
 
-Demo: on the same column, toggle **Profile → Boundary → Mesh**. Message — an opinion about
-geometry isn't one blob; **fidelity is itself composable / load-on-demand**. Pairs naturally
-with the discipline-layers story.
+| Tier | File | Geometry |
+|------|------|----------|
+| **P** Profile  | [`tiers/tier-P.ifcx`](tiers/tier-P.ifcx) | the steel cross-section as a closed `basiscurves` polyline |
+| **B** Boundary | [`tiers/tier-B.ifcx`](tiers/tier-B.ifcx) | a coarse extruded **box** (architect's massing volume) |
+| **M** Mesh     | [`tiers/tier-M.ifcx`](tiers/tier-M.ifcx) | the full extruded **I-section** (structural steel profile) |
 
-Runbook: clone the fork, checkout `louistrue-geometry-tiers`, build its viewer, load a
-tiered asset, exercise the tier-toggle UI. (Outside this repo — guided, not scripted here.)
+```bash
+node demo/layered-composition/tiers/gen-tiers.mjs            # (re)generate the tiers
+# compose discipline layers + ONE tier; the tier wins over the architect's box:
+cd src && node ifcx-cli.js compose --no-fetch \
+  ../demo/layered-composition/viewer/{architect,structural,fire}.ifcx \
+  ../demo/layered-composition/tiers/tier-M.ifcx  out.json
+DOUBLE=1 node ../demo/layered-composition/viewer/render-still.mjs out.json isection.png
+```
+
+The narrative: the **architect ships tier B** (a massing box); the **structural engineer**,
+knowing it's an S355 section, **ships tier M** — the actual steel I-section — which *wins* over
+the box in composition. Same column, fidelity chosen per-load. Mirrors
+`LTplus-AG/IFCX@louistrue-geometry-tiers` (commit *"Ship geometry tiers P/B/M with latent-path
+face addressing"*), whose viewer adds the live tier-toggle UI + SVG profile rendering.
+
+> Tier **P** renders as a curve in the live viewer (its `basiscurves` branch). To see *only*
+> the profile, the mesh attribute must be cleared — a natural place to show the alpha
+> `null`-tombstone, and why post-alpha's explicit `DELETE` opinion is the better design.
+
+### Live in the fork
+
+Clone `LTplus-AG/IFCX`, checkout `louistrue-geometry-tiers`, build its viewer, load a tiered
+asset, exercise the tier-toggle UI. (Different repo — not pushable from here.)
 
 ---
 

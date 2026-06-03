@@ -77,13 +77,20 @@ function tri(a, b, c, rgb) {
   }
 }
 
-// --- draw, with back-face culling (outward winding => visible) ----------------
+// --- draw. Single-sided (back-face cull, an outward-winding self-test) unless
+//     DOUBLE=1, which renders both sides (normal flipped toward camera) so a
+//     procedurally-generated mesh renders regardless of winding. -------------
+const DOUBLE = process.env.DOUBLE === "1";
 let drawn = 0, culled = 0;
 for (let t = 0; t < idx.length; t += 3) {
   const A = verts[idx[t]], B = verts[idx[t+1]], Cc = verts[idx[t+2]];
-  const n = norm(cross(sub(B, A), sub(Cc, A)));
+  let n = norm(cross(sub(B, A), sub(Cc, A)));
   const center = [(A[0]+B[0]+Cc[0])/3, (A[1]+B[1]+Cc[1])/3, (A[2]+B[2]+Cc[2])/3];
-  if (dot(n, norm(sub(C, center))) <= 0) { culled++; continue; } // facing away
+  const facing = dot(n, norm(sub(C, center)));
+  if (facing <= 0) {
+    if (!DOUBLE) { culled++; continue; }        // facing away -> cull
+    n = [-n[0], -n[1], -n[2]];                   // double-sided: light the back too
+  }
   const pa = project(A), pb = project(B), pc = project(Cc);
   if (!pa || !pb || !pc) continue;
   const shade = 0.35 + 0.65 * Math.max(0, dot(n, light));
